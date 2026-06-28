@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Đồng hồ quẻ Dịch - Đồng bộ giờ</title>
+	<style>
+		:root{ --bg:#0f172a; --card:#1e293b; --line:#334155; --txt:#e2e8f0;
+			--muted:#94a3b8; --pri:#3b82f6; --ok:#10b981; --warn:#f59e0b; --err:#ef4444; }
+		*{ box-sizing:border-box; }
+		body{ margin:0; padding:24px; background:var(--bg); color:var(--txt);
+			font-family:Segoe UI,Roboto,Arial,sans-serif; }
+		.wrap{ max-width:520px; margin:0 auto; }
+		h1{ font-size:20px; margin:0 0 4px; }
+		.sub{ color:var(--muted); font-size:13px; margin-bottom:18px; }
+		.card{ background:var(--card); border:1px solid var(--line); border-radius:12px;
+			padding:16px; margin-bottom:14px; }
+		.row{ display:flex; justify-content:space-between; gap:10px; padding:6px 0;
+			font-size:14px; border-bottom:1px solid var(--line); }
+		.row:last-child{ border-bottom:none; }
+		.row .k{ color:var(--muted); }
+		.row .v{ font-variant-numeric:tabular-nums; font-weight:600; }
+		button{ border:none; border-radius:10px; padding:14px; font-size:16px; font-weight:600;
+			cursor:pointer; width:100%; color:#fff; transition:filter .15s; }
+		button:hover:not(:disabled){ filter:brightness(1.1); }
+		button:disabled{ opacity:.45; cursor:not-allowed; }
+		.b-pri{ background:var(--pri); }
+		.b-ok{ background:var(--ok); font-size:18px; padding:18px; }
+		.b-ghost{ background:#334155; }
+		.grid2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+		.status{ font-size:14px; padding:10px 12px; border-radius:8px; margin-bottom:14px;
+			background:#1e293b; border:1px solid var(--line); }
+		.status.ok{ border-color:var(--ok); color:#86efac; }
+		.status.err{ border-color:var(--err); color:#fca5a5; }
+		.status.warn{ border-color:var(--warn); color:#fcd34d; }
+		.dot{ display:inline-block; width:9px; height:9px; border-radius:50%;
+			background:var(--muted); margin-right:7px; vertical-align:middle; }
+		.dot.on{ background:var(--ok); }
+		details{ margin-top:14px; color:var(--muted); font-size:12px; }
+		#log{ white-space:pre-wrap; font-family:Consolas,monospace; font-size:11px;
+			max-height:160px; overflow:auto; background:#0b1220; padding:10px; border-radius:8px;
+			margin-top:6px; }
+		.muted{ color:var(--muted); font-size:12px; }
+	</style>
+</head>
+<body>
+<div class="wrap">
+	<h1>🔯 Đồng hồ quẻ Dịch</h1>
+	<div class="sub">Đồng bộ giờ qua Bluetooth (chỉ chạy trên <b>Chrome</b> hoặc <b>Edge</b>)</div>
+
+	<details style="margin-bottom:14px">
+		<summary style="cursor:pointer;color:#cbd5e1;font-size:14px">📖 Hướng dẫn dùng (bấm để mở)</summary>
+		<div style="font-size:13px;color:#cbd5e1;line-height:1.6;padding:8px 4px 0">
+			<b>Cách đồng bộ giờ cho đồng hồ:</b>
+			<ol style="margin:6px 0;padding-left:20px">
+				<li>Bật Bluetooth máy tính/điện thoại. Mở trang này bằng <b>Chrome</b> hoặc <b>Edge</b>.</li>
+				<li>Bấm <b>🔗 Kết nối thiết bị</b> → chọn <b>DLG-CLOCK-xxxxxx</b> trong danh sách → Ghép nối.</li>
+				<li>Khi trạng thái chuyển xanh "Đã kết nối", bấm <b>⏱️ Đồng bộ giờ ngay</b>.</li>
+				<li>Đồng hồ sẽ rời màn "Chờ đồng bộ" và vẽ bàn quẻ theo giờ thật.</li>
+			</ol>
+			<b style="color:#fca5a5">⚠️ Quan trọng:</b> đồng hồ <b>không có pin RTC</b> — rút/cạn pin là <b>mất giờ</b>, phải đồng bộ lại.<br>
+			<b>Nếu không tìm thấy / không kết nối được:</b> rút <b>hẳn</b> nguồn đồng hồ (cả pin) vài chục giây cho mất điện thật, cắm lại rồi thử lại. Mỗi lúc chỉ để <b>một</b> thiết bị (trình duyệt này) kết nối — đóng nRF/app BLE khác.<br>
+			<span class="muted">Nút <b>🎯 Hiệu chỉnh</b> bù sai số trôi (chỉ dùng sau ≥ 2 ngày kể từ lần đồng bộ). Nút <b>⬆️ Nâng cấp</b> nạp firmware .bin qua BLE.</span>
+		</div>
+	</details>
+
+	<div class="status" id="status"><span class="dot" id="dot"></span><span id="status-text">Chưa kết nối</span></div>
+
+	<button id="connect-button" class="b-pri">🔗 Kết nối thiết bị</button>
+
+	<div class="card" id="info-card" style="display:none">
+		<div class="row"><span class="k">Thiết bị</span><span class="v" id="device_name">—</span></div>
+		<div class="row"><span class="k">Điện áp pin</span><span class="v" id="current_voltage">—</span></div>
+		<div class="row"><span class="k">Giờ trên thiết bị</span><span class="v" id="current_time">—</span></div>
+		<div class="row"><span class="k">Giờ máy tính</span><span class="v" id="system_time">—</span></div>
+	</div>
+
+	<button id="setime-button" class="b-ok" disabled style="margin-bottom:14px">⏱️ Đồng bộ giờ ngay</button>
+
+	<div class="grid2">
+		<button id="calibration-button" class="b-ghost" disabled>🎯 Hiệu chỉnh</button>
+		<button id="upfirm-button" class="b-ghost" disabled>⬆️ Nâng cấp</button>
+	</div>
+	<div id="update_progress" class="muted" style="margin-top:8px"></div>
+
+	<details open>
+		<summary>Nhật ký</summary>
+		<div id="log"></div>
+	</details>
+	<div class="muted" style="margin-top:10px">
+		Mẹo: rút pin sẽ mất giờ (không có RTC) → cần đồng bộ lại. Nút Hiệu chỉnh chỉ dùng sau ≥ 2 ngày.
+	</div>
+</div>
+
+<script src="https://cdn.sheetjs.com/crc-32-latest/package/crc32.js"></script>
+<script>
+	var connected = false;
+	var device = null;
+	var longValue = null;
+
+	function log(msg, cls){
+		var el = document.getElementById('log');
+		var t = new Date().toLocaleTimeString('vi-VN');
+		el.textContent += '['+t+'] '+msg+'\n';
+		el.scrollTop = el.scrollHeight;
+		console.log(msg);
+	}
+	function setStatus(text, cls){
+		document.getElementById('status-text').textContent = text;
+		document.getElementById('status').className = 'status' + (cls? ' '+cls : '');
+		document.getElementById('dot').className = 'dot' + (cls==='ok'? ' on' : '');
+	}
+
+	function formatTime(year, month, mday, hour, min, sec){
+		month += 1;
+		var p = function(n){ return n<10? '0'+n : ''+n; };
+		return year+'-'+p(month)+'-'+p(mday)+' '+p(hour)+':'+p(min)+':'+p(sec);
+	}
+
+	function onClick(){ connected ? disconnect() : connectToDevice(); }
+
+	function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+
+	// Lấy service 0xff00: thử getPrimaryService, nếu rỗng thì liệt kê hết rồi tìm tay
+	async function findService(server){
+		try{
+			return await server.getPrimaryService( 0xff00 );
+		}catch(e){
+			log('  getPrimaryService(0xff00) lỗi (' + (e.message||e) + ') → thử liệt kê tất cả…');
+			var all = await server.getPrimaryServices();
+			log('  thấy ' + all.length + ' service: ' + all.map(function(s){return s.uuid;}).join(', '));
+			for(var k=0; k<all.length; k++){
+				var u = all[k].uuid;
+				if(u === 0xff00 || (typeof u==='string' && u.indexOf('0000ff00')===0)) return all[k];
+			}
+			throw new Error('Không có service 0xFF00 trong ' + all.length + ' service tìm thấy');
+		}
+	}
+
+	// connect + dò service + lấy 0xff01 — gộp vào 1 vòng retry, hỏng ở đâu cũng connect lại MỚI
+	// (gatt.connect trên Windows hay rớt; và service-cache đôi khi rỗng cần connect lại)
+	async function connectFull(gatt, tries){
+		var lastErr;
+		for(var i=1; i<=tries; i++){
+			try{
+				log('Kết nối (lần ' + i + '/' + tries + ')…');
+				var server = await gatt.connect();
+				await sleep(400);                  // chờ stack BLE Windows ổn định
+				var service = await findService(server);
+				log('Đã mở service 0xFF00');
+				var lv = await service.getCharacteristic( 0xff01 );
+				log('Đã lấy đặc tính giờ (0xFF01)');
+				return { server: server, service: service, longValue: lv };
+			}catch(e){
+				lastErr = e;
+				log('  lần ' + i + ' thất bại: ' + (e.message||e));
+				try{ gatt.disconnect(); }catch(_){}
+				if(i < tries) await sleep(800);    // ngắt hẳn rồi connect lại mới
+			}
+		}
+		throw lastErr;
+	}
+
+	async function connectToDevice(){
+		try{
+			setStatus('Đang tìm thiết bị…', 'warn');
+			log('Yêu cầu thiết bị Bluetooth…');
+			device = await navigator.bluetooth.requestDevice({
+				filters: [{ namePrefix: 'DLG-CLOCK' }],
+				optionalServices: [ 0xff00 ]
+			});
+			document.getElementById('device_name').textContent = device.name;
+			document.getElementById('info-card').style.display = 'block';
+			device.ongattserverdisconnected = onDisconnect;
+			log('Đã chọn: ' + device.name);
+
+			setStatus('Đang kết nối…', 'warn');
+			var r = await connectFull(device.gatt, 6);
+			var service = r.service;
+			longValue = r.longValue;
+
+			// Bật nút đồng bộ NGAY khi đã có 0xFF01 — các phần dưới chỉ là hiển thị thêm
+			connected = true;
+			document.getElementById('setime-button').disabled = false;
+			document.getElementById('upfirm-button').disabled = false;
+			document.getElementById('calibration-button').disabled = false;
+			document.getElementById('connect-button').textContent = '⛔ Ngắt kết nối';
+			document.getElementById('connect-button').className = 'b-ghost';
+			setStatus('Đã kết nối — sẵn sàng đồng bộ', 'ok');
+
+			// Đọc điện áp (không bắt buộc)
+			try{
+				var adc1Value = await service.getCharacteristic( 0xff02 );
+				var v = await adc1Value.readValue();
+				document.getElementById('current_voltage').textContent =
+					(v.getUint16(0, true)/1000).toFixed(3) + ' V';
+			}catch(e){ log('Bỏ qua đọc điện áp: ' + e.message); }
+
+			// Đọc giờ hiện tại trên thiết bị (không bắt buộc)
+			try{
+				var ct = await longValue.readValue();
+				document.getElementById('current_time').textContent = formatTime(
+					ct.getUint16(0,true), ct.getUint8(2), ct.getUint8(3),
+					ct.getUint8(4), ct.getUint8(5), ct.getUint8(6));
+			}catch(e){ log('Bỏ qua đọc giờ thiết bị: ' + e.message); }
+
+			showSystemTime();
+		}catch(error){
+			log('❌ Lỗi kết nối: ' + (error.message||error));
+			setStatus('Lỗi kết nối: ' + (error.message||error), 'err');
+			disconnect();
+		}
+	}
+
+	function showSystemTime(){
+		var t = new Date();
+		document.getElementById('system_time').textContent = formatTime(
+			t.getFullYear(), t.getMonth(), t.getDate(),
+			t.getHours(), t.getMinutes(), t.getSeconds());
+	}
+
+	async function onSetTime(){
+		document.getElementById('setime-button').disabled = true;
+		try{
+			setStatus('Đang đồng bộ giờ…', 'warn');
+			// chờ tới đúng đầu giây cho chính xác
+			var t0 = Date.now();
+			while((Date.now()%1000) > 5 && (Date.now()-t0) < 1100){ /* busy wait <1s */ }
+
+			var today = new Date();
+			var year=today.getFullYear(), month=today.getMonth(), mday=today.getDate();
+			var wday=today.getDay(), hour=today.getHours(), minute=today.getMinutes(), second=today.getSeconds();
+
+			// Âm lịch (firmware quẻ TỰ tính âm lịch VN nên 3 byte này chỉ là dự phòng)
+			var l_year=2020, l_month=1, l_mday=1;
+			try{
+				var ls = today.toLocaleDateString('zh-CN-u-ca-chinese',{month:'numeric',day:'numeric'});
+				var lmoff = 0;
+				if(ls.charAt(0)=='闰'){ lmoff = 128; ls = ls.substr(1); }
+				var sp = ls.split('-');
+				l_month = lmoff + parseInt(sp[0]);
+				l_mday  = parseInt(sp[1]);
+				l_year  = parseInt(today.toLocaleDateString('zh-CN-u-ca-chinese',{year:'numeric'}).substr(0,4));
+			}catch(e){ log('Không tính được âm lịch trình duyệt (bỏ qua): ' + e.message); }
+
+			var buf = new Uint8Array(12);
+			buf[0]=0x91;
+			buf[1]=year%256; buf[2]=Math.floor(year/256);
+			buf[3]=month; buf[4]=mday; buf[5]=hour; buf[6]=minute; buf[7]=second; buf[8]=wday;
+			buf[9]=l_year-2020; buf[10]=l_month-1; buf[11]=l_mday;
+			await longValue.writeValue(buf);
+
+			showSystemTime();
+			document.getElementById('current_time').textContent =
+				formatTime(year, month, mday, hour, minute, second);
+			log('✅ Đã gửi giờ: ' + formatTime(year, month, mday, hour, minute, second));
+			setStatus('✅ Đồng bộ thành công! Thiết bị sẽ vẽ bàn quẻ theo giờ thật.', 'ok');
+		}catch(error){
+			log('❌ Lỗi đồng bộ: ' + (error.message||error));
+			setStatus('Lỗi đồng bộ: ' + (error.message||error), 'err');
+		}
+		document.getElementById('setime-button').disabled = false;
+	}
+
+	async function onCalibration(){
+		document.getElementById('calibration-button').disabled = true;
+		try{
+			var cur = await longValue.readValue();
+			var last_minute = cur.getUint8(5);
+			var cal_minute  = cur.getInt32(7, true);
+			log('Sau đồng bộ ' + cal_minute + ' phút');
+			if(cal_minute == -1){ setStatus('Hãy đồng bộ giờ trước!', 'warn'); }
+			else if(cal_minute < 2880){ setStatus('Khoảng cách đồng bộ–hiệu chỉnh quá ngắn (< 2 ngày)', 'warn'); }
+			else{
+				log('Chờ phút nhảy…');
+				var minute, second;
+				while(true){
+					cur = await longValue.readValue();
+					minute = cur.getUint8(5);
+					if(minute != last_minute) break;
+					last_minute = minute;
+				}
+				second = cur.getUint8(6);
+				var now = new Date();
+				var sm = now.getMinutes(), ss = now.getSeconds();
+				if(minute>sm){ if(minute-sm>50) sm+=60; } else { if(sm-minute>50) minute+=60; }
+				var diff = (minute*60+second)-(sm*60+ss);
+				log('Chênh lệch: ' + diff + ' giây');
+				var b = new Uint8Array(4); b[0]=0x92; b[1]=diff%256; b[2]=Math.floor(diff/256)&0xff; b[3]=0;
+				await longValue.writeValue(b);
+				setStatus('Hiệu chỉnh xong (lệch ' + diff + 's)', 'ok');
+			}
+		}catch(e){ log('❌ Lỗi hiệu chỉnh: ' + (e.message||e)); }
+		document.getElementById('calibration-button').disabled = false;
+	}
+
+	function readFileAsArrayBuffer(file){
+		return new Promise(function(res, rej){
+			var r = new FileReader();
+			r.onload = function(){ res(r.result); };
+			r.onerror = rej;
+			r.readAsArrayBuffer(file);
+		});
+	}
+	function find_patten(target, patten){
+		var tlen=target.length, plen=patten.length, i, j;
+		for(i=0; i<tlen-plen; i++){
+			for(j=0; j<plen; j++){ if(target[i+j]!==patten[j]) break; }
+			if(j==plen) return i;
+		}
+		return -1;
+	}
+	async function onUpdate(){
+		document.getElementById('upfirm-button').disabled = true;
+		var firm_size, firm_buf;
+		try{
+			var fh = await window.showOpenFilePicker({
+				types:[{ description:'Firmware', accept:{'application/octet-stream':['.bin']} }]
+			});
+			var file = await fh[0].getFile();
+			firm_buf = new Uint8Array(await readFileAsArrayBuffer(file));
+			firm_size = file.size;
+		}catch(err){
+			log('Hủy chọn file: ' + (err.message||err));
+			document.getElementById('upfirm-button').disabled = false; return;
+		}
+		var magic = new Uint8Array([0x79,0x13,0xa5,0xf9,0x86,0xec,0x5a,0x06]);
+		var pos = find_patten(firm_buf, magic);
+		if(pos == -1){ setStatus('Firmware không hợp lệ (thiếu version)', 'err');
+			document.getElementById('upfirm-button').disabled = false; return; }
+		var firm_ver = firm_buf[pos+9]*256 + firm_buf[pos+8];
+		var firm_crc = CRC32.buf(firm_buf);
+		log('Firmware ver=' + firm_ver + ' size=' + firm_size + ' crc=' + (firm_crc>>>0).toString(16));
+
+		var buf = new Uint8Array(136), dv = new DataView(buf.buffer);
+		buf[0]=0xa0; buf[1]=0x00; dv.setUint16(2, firm_size, true);
+		await longValue.writeValue(buf);
+		var p = 0;
+		for(var i=0; i<firm_size+64; i+=256){
+			buf.fill(0xff);
+			if(i==0){
+				dv.setUint32(8+0, 0x00aa5170, true);
+				dv.setUint32(8+4, firm_size, true);
+				dv.setUint32(8+8, firm_crc, true);
+				dv.setUint32(8+28, (0xa50f0000+firm_ver), true);
+				buf[8+32]=0; buf[0]=0xa2;
+				buf.set(firm_buf.subarray(p, p+64), 8+64); await longValue.writeValue(buf); p+=64;
+			}else{
+				buf[0]=0xa2; buf.set(firm_buf.subarray(p, p+128), 8); await longValue.writeValue(buf); p+=128;
+			}
+			buf[0]=0xa3; buf.set(firm_buf.subarray(p, p+128), 8); await longValue.writeValue(buf); p+=128;
+			document.getElementById('update_progress').textContent =
+				'Tiến độ nâng cấp: ' + ((100*p/(firm_size+64))>>0) + '%';
+		}
+		buf[0]=0xa4; buf[1]=0; buf[2]=0; buf[3]=0; await longValue.writeValue(buf);
+		log('Nâng cấp xong');
+		document.getElementById('upfirm-button').disabled = false;
+	}
+
+	function disconnect(){
+		if(device && device.gatt.connected) device.gatt.disconnect();
+		onDisconnect();
+	}
+	function onDisconnect(){
+		device = null; connected = false; longValue = null;
+		document.getElementById('setime-button').disabled = true;
+		document.getElementById('calibration-button').disabled = true;
+		document.getElementById('upfirm-button').disabled = true;
+		document.getElementById('connect-button').textContent = '🔗 Kết nối thiết bị';
+		document.getElementById('connect-button').className = 'b-pri';
+		setStatus('Đã ngắt kết nối', '');
+		log('Đã ngắt kết nối');
+	}
+
+	document.getElementById('connect-button').addEventListener('click', onClick);
+	document.getElementById('setime-button').addEventListener('click', onSetTime);
+	document.getElementById('upfirm-button').addEventListener('click', onUpdate);
+	document.getElementById('calibration-button').addEventListener('click', onCalibration);
+
+	if(!navigator.bluetooth){
+		setStatus('Trình duyệt không hỗ trợ Web Bluetooth — dùng Chrome hoặc Edge', 'err');
+	}
+</script>
+</body>
+</html>
